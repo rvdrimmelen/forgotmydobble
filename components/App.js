@@ -127,6 +127,20 @@ const upperBonus = (card) => (upperSubtotal(card) >= 63 ? 35 : 0);
 const totalScore = (card) =>
   categories.reduce((s, c) => s + (card[c.key] ?? 0), 0) + upperBonus(card);
 
+const bestCategoryKey = (card, dice) => {
+  let best = null;
+  let bestScore = -1;
+  categories.forEach((c) => {
+    if (card[c.key] !== null) return;
+    const s = scorers[c.key](dice);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c.key;
+    }
+  });
+  return best;
+};
+
 // ---------- App ----------
 export default function App() {
   const [mode, setMode] = useState("menu"); // menu | yahtzee | freedice
@@ -377,6 +391,7 @@ function FreeDice({ onExit }) {
 function Yahtzee({ onExit }) {
   const [setupDone, setSetupDone] = useState(false);
   const [players, setPlayers] = useState(["Speler 1", "Speler 2"]);
+  const [kidsMode, setKidsMode] = useState([false, false]);
   const [cards, setCards] = useState(null);
   const [turnIdx, setTurnIdx] = useState(0);
   const [dice, setDice] = useState([1, 1, 1, 1, 1]);
@@ -456,6 +471,8 @@ function Yahtzee({ onExit }) {
       <YahtzeeSetup
         players={players}
         setPlayers={setPlayers}
+        kidsMode={kidsMode}
+        setKidsMode={setKidsMode}
         onStart={startGame}
         onExit={onExit}
       />
@@ -464,6 +481,11 @@ function Yahtzee({ onExit }) {
 
   const card = cards[turnIdx];
   const gameOver = cards.every(allFilled);
+  const tipKey =
+    kidsMode[turnIdx] && hasRolled ? bestCategoryKey(card, dice) : null;
+  const tipCategory = tipKey ? categories.find((c) => c.key === tipKey) : null;
+  const tipLabel = tipCategory?.label;
+  const tipScore = tipKey ? scorers[tipKey](dice) : 0;
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-5">
@@ -494,6 +516,7 @@ function Yahtzee({ onExit }) {
             }`}
           >
             <div className="truncate text-xs font-bold uppercase tracking-wider text-stone-600">
+              {kidsMode[i] && "🧒 "}
               {p}
             </div>
             <div className="text-lg font-black">{totalScore(cards[i])}</div>
@@ -551,6 +574,18 @@ function Yahtzee({ onExit }) {
         {rolling ? "Rollen…" : rollsLeft === 3 ? "Eerste worp" : "Werp opnieuw"}
       </button>
 
+      {/* kids-mode tip */}
+      {kidsMode[turnIdx] && hasRolled && tipKey && (
+        <div className="mb-3 rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-3 text-center">
+          <div className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+            💡 Tip voor {players[turnIdx]}
+          </div>
+          <div className="text-sm font-bold text-emerald-900">
+            Kies <span className="underline">{tipLabel}</span> voor +{tipScore} punten!
+          </div>
+        </div>
+      )}
+
       {/* scorecard for current player */}
       <div className="rounded-2xl border-2 border-stone-300 bg-white p-2 shadow">
         <div className="mb-1 px-2 pt-1 text-xs font-bold uppercase tracking-wider text-stone-500">
@@ -560,13 +595,16 @@ function Yahtzee({ onExit }) {
           {categories.map((c) => {
             const used = card[c.key] !== null;
             const preview = hasRolled && !used ? scorers[c.key](dice) : null;
+            const isTip = kidsMode[turnIdx] && hasRolled && c.key === tipKey;
             return (
               <button
                 key={c.key}
                 onClick={() => score(c.key)}
                 disabled={used || !hasRolled}
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition ${
-                  used
+                  isTip
+                    ? "bg-emerald-50 ring-2 ring-emerald-500"
+                    : used
                     ? "bg-stone-50 text-stone-400"
                     : hasRolled
                     ? "active:bg-amber-50"
@@ -574,7 +612,10 @@ function Yahtzee({ onExit }) {
                 }`}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold">{c.label}</div>
+                  <div className="font-bold">
+                    {isTip && "👍 "}
+                    {c.label}
+                  </div>
                   <div className="truncate text-[11px] text-stone-500">
                     {c.help}
                   </div>
@@ -636,13 +677,21 @@ function Yahtzee({ onExit }) {
   );
 }
 
-function YahtzeeSetup({ players, setPlayers, onStart, onExit }) {
+function YahtzeeSetup({ players, setPlayers, kidsMode, setKidsMode, onStart, onExit }) {
   const updateName = (i, v) =>
     setPlayers((p) => p.map((n, idx) => (idx === i ? v : n)));
-  const addPlayer = () =>
-    players.length < 4 && setPlayers([...players, `Speler ${players.length + 1}`]);
-  const removePlayer = (i) =>
-    players.length > 1 && setPlayers(players.filter((_, idx) => idx !== i));
+  const addPlayer = () => {
+    if (players.length >= 4) return;
+    setPlayers([...players, `Speler ${players.length + 1}`]);
+    setKidsMode([...kidsMode, false]);
+  };
+  const removePlayer = (i) => {
+    if (players.length <= 1) return;
+    setPlayers(players.filter((_, idx) => idx !== i));
+    setKidsMode(kidsMode.filter((_, idx) => idx !== i));
+  };
+  const toggleKidsMode = (i) =>
+    setKidsMode((k) => k.map((v, idx) => (idx === i ? !v : v)));
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6">
@@ -661,21 +710,33 @@ function YahtzeeSetup({ players, setPlayers, onStart, onExit }) {
 
       <div className="mb-4 space-y-2">
         {players.map((p, i) => (
-          <div key={i} className="flex gap-2">
-            <input
-              value={p}
-              onChange={(e) => updateName(i, e.target.value)}
-              className="flex-1 rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold focus:border-amber-500 focus:outline-none"
-              placeholder={`Speler ${i + 1}`}
-            />
-            {players.length > 1 && (
-              <button
-                onClick={() => removePlayer(i)}
-                className="rounded-xl border-2 border-stone-300 bg-white px-3 font-bold text-stone-500"
-              >
-                ×
-              </button>
-            )}
+          <div key={i} className="rounded-xl border-2 border-stone-300 bg-white p-2">
+            <div className="flex gap-2">
+              <input
+                value={p}
+                onChange={(e) => updateName(i, e.target.value)}
+                className="flex-1 rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold focus:border-amber-500 focus:outline-none"
+                placeholder={`Speler ${i + 1}`}
+              />
+              {players.length > 1 && (
+                <button
+                  onClick={() => removePlayer(i)}
+                  className="rounded-xl border-2 border-stone-300 bg-white px-3 font-bold text-stone-500"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => toggleKidsMode(i)}
+              className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 py-2 text-sm font-bold transition ${
+                kidsMode[i]
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                  : "border-stone-200 bg-stone-50 text-stone-500"
+              }`}
+            >
+              🧒 Kids-modus {kidsMode[i] ? "aan" : "uit"}
+            </button>
           </div>
         ))}
       </div>
