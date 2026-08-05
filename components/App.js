@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import Bommetjes from "./Bommetjes";
 
 // ---------- Dice ----------
 const DiePips = ({ value, size = 56 }) => {
@@ -143,7 +144,7 @@ const bestCategoryKey = (card, dice) => {
 
 // ---------- App ----------
 export default function App() {
-  const [mode, setMode] = useState("menu"); // menu | yahtzee | freedice
+  const [mode, setMode] = useState("menu"); // menu | yahtzee | freedice | bommetjes
   return (
     <div className="min-h-screen bg-stone-100 font-serif text-stone-900">
       <style>{`
@@ -155,6 +156,7 @@ export default function App() {
       {mode === "menu" && <Menu onPick={setMode} />}
       {mode === "yahtzee" && <Yahtzee onExit={() => setMode("menu")} />}
       {mode === "freedice" && <FreeDice onExit={() => setMode("menu")} />}
+      {mode === "bommetjes" && <Bommetjes onExit={() => setMode("menu")} />}
     </div>
   );
 }
@@ -188,7 +190,7 @@ function Menu({ onPick }) {
 
       <button
         onClick={() => onPick("freedice")}
-        className="group flex w-full items-center justify-between rounded-2xl border-2 border-stone-900 bg-white p-6 shadow-lg transition active:scale-[0.98]"
+        className="group mb-4 flex w-full items-center justify-between rounded-2xl border-2 border-stone-900 bg-white p-6 shadow-lg transition active:scale-[0.98]"
       >
         <div className="text-left">
           <div className="text-xs font-bold uppercase tracking-wider text-amber-700">
@@ -196,6 +198,20 @@ function Menu({ onPick }) {
           </div>
           <div className="text-2xl font-bold">Losse dobbelstenen</div>
           <div className="text-sm text-stone-600">1–6 stuks, gewoon rollen</div>
+        </div>
+        <div className="text-3xl">→</div>
+      </button>
+
+      <button
+        onClick={() => onPick("bommetjes")}
+        className="group flex w-full items-center justify-between rounded-2xl border-2 border-sky-700 bg-sky-600 p-6 text-white shadow-lg transition active:scale-[0.98]"
+      >
+        <div className="text-left">
+          <div className="text-xs font-bold uppercase tracking-wider text-sky-200">
+            Bij het zwembad
+          </div>
+          <div className="text-2xl font-bold">Bommetjes 🌊</div>
+          <div className="text-sm text-sky-100">Wie springt het hoogst & mooist?</div>
         </div>
         <div className="text-3xl">→</div>
       </button>
