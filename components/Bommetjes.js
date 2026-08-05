@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const CATEGORIES = [
   { key: "hoogte", label: "Hoogte", emoji: "🚀", help: "Hoe hoog kwam die sprong?" },
@@ -18,6 +18,7 @@ export default function Bommetjes({ onExit }) {
   const [round, setRound] = useState(1);
   const [scores, setScores] = useState(defaultScores());
   const [showBoard, setShowBoard] = useState(false);
+  const [showCameraMeter, setShowCameraMeter] = useState(false);
 
   const startGame = () => {
     setJumps(players.map(() => []));
@@ -112,6 +113,14 @@ export default function Bommetjes({ onExit }) {
               className="w-full accent-sky-600"
             />
             <div className="text-[11px] text-stone-500">{c.help}</div>
+            {c.key === "plons" && cameraSupported() && (
+              <button
+                onClick={() => setShowCameraMeter(true)}
+                className="mt-2 w-full rounded-xl border-2 border-sky-300 bg-sky-50 py-2 text-xs font-bold text-sky-800"
+              >
+                📸 Of meet de plons met de camera
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -142,6 +151,140 @@ export default function Bommetjes({ onExit }) {
           }}
         />
       )}
+
+      {showCameraMeter && (
+        <CameraSplashMeter
+          onResult={(value) => {
+            setScores((s) => ({ ...s, plons: value }));
+            setShowCameraMeter(false);
+          }}
+          onClose={() => setShowCameraMeter(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function cameraSupported() {
+  return (
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function"
+  );
+}
+
+const MEASURE_MS = 3000;
+const MEASURE_W = 64;
+const MEASURE_H = 48;
+
+function CameraSplashMeter({ onResult, onClose }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [status, setStatus] = useState("starting"); // starting | ready | measuring | error
+
+  useEffect(() => {
+    let cancelled = false;
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const startMeasuring = () => {
+    if (status !== "ready") return;
+    setStatus("measuring");
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    canvas.width = MEASURE_W;
+    canvas.height = MEASURE_H;
+    let prev = null;
+    let peak = 0;
+    const started = Date.now();
+
+    const tick = () => {
+      if (Date.now() - started > MEASURE_MS) {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        const score = Math.max(1, Math.min(10, Math.round(1 + (peak / 40) * 9)));
+        onResult(score);
+        return;
+      }
+      ctx.drawImage(video, 0, 0, MEASURE_W, MEASURE_H);
+      const frame = ctx.getImageData(0, 0, MEASURE_W, MEASURE_H).data;
+      if (prev) {
+        let diff = 0;
+        for (let i = 0; i < frame.length; i += 4) {
+          diff += Math.abs(frame[i] - prev[i]);
+        }
+        const avgDiff = diff / (MEASURE_W * MEASURE_H);
+        if (avgDiff > peak) peak = avgDiff;
+      }
+      prev = frame;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/70 p-4">
+      <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-black">📸 Plons meten</h3>
+          <button
+            onClick={onClose}
+            className="rounded-full bg-stone-100 px-3 py-1 text-sm font-bold"
+          >
+            Sluit
+          </button>
+        </div>
+
+        {status === "error" ? (
+          <div className="rounded-xl border-2 border-red-300 bg-red-50 p-3 text-sm text-red-700">
+            Geen toegang tot de camera. Scoor de plons handmatig met de schuifbalk.
+          </div>
+        ) : (
+          <>
+            <div className="mb-3 overflow-hidden rounded-2xl border-2 border-stone-300 bg-black">
+              <video ref={videoRef} playsInline muted className="w-full" />
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+            <p className="mb-3 text-xs text-stone-500">
+              Richt de camera op het water en druk op start vlak vóór de
+              sprong. Er wordt 3 seconden gemeten — hoe meer beweging in het
+              water, hoe hoger de score.
+            </p>
+            <button
+              onClick={startMeasuring}
+              disabled={status !== "ready"}
+              className="w-full rounded-2xl border-2 border-stone-900 bg-sky-500 p-4 text-lg font-black uppercase tracking-wider text-white transition active:scale-[0.98] disabled:opacity-50"
+            >
+              {status === "measuring"
+                ? "Meten…"
+                : status === "starting"
+                ? "Camera starten…"
+                : "Start meting"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
